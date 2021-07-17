@@ -247,9 +247,9 @@ void *ncclCommThreadMain(void *arg) {
             if (fIdx > FUNC_INDEX_P2P)
               sprintf(line+offset, "ERROR bad function index %d", fIdx);
             else if (fIdx == FUNC_INDEX_P2P)
-              sprintf(line+offset, "nt %d dt %d", td->p2p.nThreads, td->p2p.delta);
+              sprintf(line+offset, "nt %d dt %d busId %lx", td->p2p.nThreads, td->p2p.delta, comm->busId);
             else
-              sprintf(line+offset, "nt %d bi %d nc %d", td->coll.nThreads, td->coll.bid, td->coll.nChannels);
+              sprintf(line+offset, "nt %d bi %d nc %d busId %lx", td->coll.nThreads, td->coll.bid, td->coll.nChannels, comm->busId);
             break;
           case ncclCollTraceCollEndType:
             if (fIdx != 0xffff) {
@@ -258,12 +258,12 @@ void *ncclCommThreadMain(void *arg) {
               if (fIdx > FUNC_INDEX_P2P)
                 sprintf(line+offset, "ERROR bad function index %d", fIdx);
               else if (fIdx == FUNC_INDEX_P2P)
-                sprintf(line+offset, "nt %d dt %d", td->p2p.nThreads, td->p2p.delta);
+                sprintf(line+offset, "nt %d dt %d busId %lx", td->p2p.nThreads, td->p2p.delta, comm->busId);
               else
-                sprintf(line+offset, "nt %d bi %d nc %d", td->coll.nThreads, td->coll.bid, td->coll.nChannels);
+                sprintf(line+offset, "nt %d bi %d nc %d busId %lx", td->coll.nThreads, td->coll.bid, td->coll.nChannels, comm->busId);
             }
             else
-              sprintf(line+offset, " KE");
+              sprintf(line+offset, " KE busId %lx", comm->busId);
             break;
           case ncclCollTraceAbortType:
             sprintf(line+offset, " Abort");
