@@ -29,6 +29,9 @@ The frequency of devices with maximum time spent in a kernel (unique opCount) fo
 
 In addition, the tool also populates timings of each op for every devices in a csv file.
 
+## TODO
+- The current tool does not work with the cases when a opCount contains more than one operation with different nRank.
+- More tools shall be created based on the new commit (e.g. device_grouping, unique_command, trace_processor for multiple device groups). 
 
 ## Copyright
 All source code and accompanying documentation are copyright (c) 2019-2020 Advanced Micro Devices, Inc. All rights reserved.
