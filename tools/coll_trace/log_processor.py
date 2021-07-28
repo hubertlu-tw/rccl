@@ -153,22 +153,6 @@ def get_useful_info(log_file):
             
     return coll_lines, conn_lines, comm_lines, ring_lines, tree_lines, coll_trace_lines
 
-# def coll_table(coll_lines):
-#     opCount, coll, count, datatype, op_type, root, comm, nnranks = [], [], [], [], [], [], [], []
-#     for line in coll_lines:
-#         split_list = line.split(" ")
-#         coll.append(split_list[4][:-1])
-#         opCount.append(split_list[6])
-#         count.append(split_list[12])
-#         datatype.append(split_list[14])
-#         op_type.append(split_list[16])
-#         root.append(split_list[18])
-#         comm.append(split_list[20])
-#         nnranks.append(next(item for item in split_list if 'nranks' in item).split("=")[1].replace("]", ""))
-
-#     dict_coll = {'coll': coll, 'opCount': opCount, 'datatype': datatype, 'count':count, 'op_type':op_type, 'root':root, 'comm':comm, 'nnranks':nnranks}    
-#     return pd.DataFrame(dict_coll)
-
 def coll_table(coll_lines):
     opCount, coll, count, datatype, op_type, root, comm, nranks, data_size = [], [], [], [], [], [], [], [], []
     for line in coll_lines:
@@ -195,7 +179,8 @@ def coll_table(coll_lines):
 ## However, it will not capture the information for CollNet for now.
 
 ## xxx [4] NCCL INFO Channel 00 : 0[e3000] -> 1[c3000] via P2P/IPC comm 0x7f53bc000e50 nRanks 04',  #(new output)
-def conn_table_modified(conn_lines):
+
+def conn_table(conn_lines):  # Only works for RCCL 2.9 or above
     def process_string(line):
         split_list = line.split("[")
         return [split_list[0], split_list[1].split("]")[0]]
@@ -245,7 +230,7 @@ def topo_table(topo_lines):
 def create_table(log_name):
     log_file = os.path.abspath(log_name)
     coll_lines, conn_lines, comm_lines, ring_lines, tree_lines, coll_trace_lines = get_useful_info(log_file)
-    return coll_table(coll_lines), conn_table_modified(conn_lines), comm_table(comm_lines), topo_table(ring_lines), topo_table(tree_lines), coll_trace_lines
+    return coll_table(coll_lines), conn_table(conn_lines), comm_table(comm_lines), topo_table(ring_lines), topo_table(tree_lines), coll_trace_lines
 
 
 def device_grouping(comm_table, conn_table):
@@ -295,7 +280,6 @@ def modify_label(in_txt, out_txt, rank_busId_mapping):
                 for m in re.finditer('"([^"]*)"', line):
                     rank_quot = line[m.start(0):m.end(0)]
                     rank = line[m.start(0)+1:m.end(0)-1] # find the rank with no quotation
-                    print(rank_quot, rank)
                     line = line.replace(rank_quot,'\"'+rank_busId_mapping[rank]+'\"', 1)
                     f.write("{}".format(line))
                     break
@@ -445,7 +429,6 @@ def rccl_log_process():
         for device in group:
             comms = comm_table[(comm_table['nranks'] == nranks) & (comm_table['busId'] == device)]['comm'].unique()
             assert len(comms) == 1       # if not 1, it means different devices may have same nRanks and busId.
-            print(comms[0])
             lines = collect_topo(comms[0], nranks, ring_table, tree_table, conn_table, lines)
             rank = comm_table[(comm_table['nranks'] == nranks) & (comm_table['busId'] == device)]['rank'].unique()[0]
             busId = comm_table[(comm_table['nranks'] == nranks) & (comm_table['busId'] == device)]['busId'].unique()[0]
@@ -459,6 +442,7 @@ def rccl_log_process():
         time.sleep(1)
         modify_label(temp1_txt, temp2_txt, rank_busId_mapping)
         p2 = subprocess.Popen("dot -Tpng {} -o '{}.png'".format(temp2_txt, i), stdin=subprocess.PIPE, stdout=subprocess.PIPE, shell=True)
+        p3 = subprocess.Popen("rm -r temp*.txt", stdin=subprocess.PIPE, stdout=subprocess.PIPE, shell=True)
     
     ########### Collective trace processor ###########
     
@@ -488,13 +472,7 @@ if __name__ == '__main__':
         python = sys.executable
         subprocess.check_call([python, '-m', 'pip', 'install', *missing], stdout=subprocess.DEVNULL)
     ##### TODO #####
-    # sudo apt-get install -y gawk
-    # sudo apt-get install -y graphviz 
     import pandas as pd
     rccl_log_process()
     
-# python final.py --rccl-debug-log gpt2_rccl_mp4_log_newPR.txt
-# python extract_topo.py --rccl-debug-log base_2.9.log
-
-# awk -f extract_topo.awk temp_0.txt > temp_1_0.txt
-# awk -f extract_topo.awk 4_nodes.log.txt > test.txt
+# python log_processor.py --rccl-debug-log gpt2_rccl_mp4_log_newPR.txt
