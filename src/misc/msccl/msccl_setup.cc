@@ -13,6 +13,24 @@
 #include "msccl/msccl_setup.h"
 #include "msccl/msccl_status.h"
 
+ncclResult_t mscclGetCaptureStatus(hipStream_t stream) {
+  mscclStatus& status = mscclGetStatus();
+  hipStreamCaptureStatus captureStatus;
+  unsigned long long captureId;
+  CUDACHECK(hipStreamGetCaptureInfo(stream, &captureStatus, &captureId));
+  if (captureStatus == hipStreamCaptureStatusActive) {
+    if (captureId != status.captureId) {
+      status.captureStatus = mscclNewCapture;
+    } else {
+      status.captureStatus = mscclExistingCapture;
+    }
+    status.captureId = captureId;
+  } else {
+    status.captureStatus = mscclNoCapture;
+  }
+  return ncclSuccess;
+}
+
 ncclResult_t mscclSetupCount(struct mscclAlgo* hostAlgo, ncclComm_t comm, size_t count, ncclDataType_t dataType) {
   mscclStatus& status = mscclGetStatus();
   status.stepSize = comm->buffSizes[hostAlgo->protocol] / NCCL_STEPS;
@@ -40,7 +58,7 @@ ncclResult_t mscclSetupScratch(struct mscclAlgo* hostAlgo, hipStream_t stream) {
   size_t sizeNeeded = (status.nBytes * (size_t)(hostAlgo->nScratchChunks)) / (size_t)(hostAlgo->nChunksPerLoop);
   if (sizeNeeded > status.scratchBufferSize){
     CUDACHECK(hipStreamSynchronize(stream));
-    CUDACHECK(hipFree(status.scratchBuffer));
+    NCCLCHECK(ncclCudaFree(status.scratchBuffer));
     NCCLCHECK(ncclCudaCalloc((char**)&status.scratchBuffer, sizeNeeded));
     status.scratchBufferSize = sizeNeeded;
   }
@@ -49,7 +67,8 @@ ncclResult_t mscclSetupScratch(struct mscclAlgo* hostAlgo, hipStream_t stream) {
 
 ncclResult_t mscclSetupSyncFlags(hipStream_t stream) {
   mscclStatus& status = mscclGetStatus();
-  if (status.workIndex > (1ULL << (8*sizeof(status.workIndex))) - 2 * NCCL_MAX_OPS - 1) {
+  if (status.captureStatus == mscclNewCapture ||
+      status.workIndex > (1ULL << (8*sizeof(status.workIndex))) - 2 * NCCL_MAX_OPS - 1) {
     CUDACHECK(hipMemsetAsync(status.syncFlags, 0, sizeof(struct mscclFlag) * MSCCL_MAX_NUM_THREAD_BLOCKS, stream));
     status.workIndex = 1; // setting the workIndex back to 1 for next iterations
   }

@@ -12,7 +12,7 @@
 #include <vector>
 #include "devcomm.h"
 
-#define MSCCL_MAX_NUM_STEPS 256
+#define MSCCL_MAX_NUM_STEPS 64
 #define MSCCL_MAX_NUM_THREAD_BLOCKS_PER_CHANNEL 32
 #define MSCCL_MAX_NUM_THREAD_BLOCKS (MSCCL_MAX_NUM_THREAD_BLOCKS_PER_CHANNEL * MAXCHANNELS)
 #define MSCCL_MAX_COUNT 72 // max concurrent number of msccl chunk transmission
@@ -164,6 +164,12 @@ struct mscclSchedulerParam {
   hipStream_t stream;
 };
 
+enum mscclCaptureStatus {
+  mscclNoCapture,
+  mscclNewCapture,
+  mscclExistingCapture
+};
+
 struct mscclStatus {
   std::vector<mscclAlgoHandle_t> freeAlgoHandles;
   std::map<mscclAlgoHandle_t, mscclAlgo *> hostAlgos;
@@ -184,6 +190,8 @@ struct mscclStatus {
   mscclGroupStatus groupStatus;
   int groupDepth;
   std::vector<struct mscclSchedulerParam> savedSchedulerParams;
+  unsigned long long captureId;
+  mscclCaptureStatus captureStatus;
 };
 
 struct alignas(16) mscclWork {

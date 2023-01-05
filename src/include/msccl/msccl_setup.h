@@ -11,6 +11,8 @@
 #include "comm.h"
 #include "msccl/msccl_struct.h"
 
+ncclResult_t mscclGetCaptureStatus(hipStream_t stream);
+
 ncclResult_t mscclSetupScratch(struct mscclAlgo* hostAlgo, hipStream_t stream);
 
 ncclResult_t mscclSetupSyncFlags(hipStream_t stream);

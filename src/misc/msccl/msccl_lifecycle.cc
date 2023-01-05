@@ -61,6 +61,8 @@ ncclResult_t mscclInit(ncclComm_t comm) {
   NCCLCHECK(ncclCudaCalloc(&status.syncFlags, MSCCL_MAX_NUM_THREAD_BLOCKS));
   status.groupStatus = mscclNoGroup;
   status.groupDepth = 0;
+  status.captureId = ULLONG_MAX;
+  status.captureStatus = mscclNoCapture;
   mscclSchedulerTriedLoadAlgo = false;
   return ncclSuccess;
 }
@@ -254,8 +256,6 @@ ncclResult_t mscclEnqueueCheck(
     size_t count, ncclDataType_t dataType, int root, int peer, ncclRedOp_t op,
     mscclFunc_t func, ncclComm_t comm, hipStream_t stream) {
   mscclStatus& status = mscclGetStatus();
-  hipStreamCaptureStatus captureStatus;
-  unsigned long long pid;
 
   status.savedSchedulerParams.push_back({});
   NCCLCHECK(mscclSetSchedulerParam(
@@ -265,27 +265,21 @@ ncclResult_t mscclEnqueueCheck(
 
   switch (status.groupStatus) {
     case mscclNoGroup:
-      CUDACHECK(hipStreamGetCaptureInfo(stream, &captureStatus, &pid));
-      if (captureStatus == hipStreamCaptureStatusNone) {
-        NCCLCHECK(mscclScheduler(&status.savedSchedulerParams.back()));
-        if (status.savedSchedulerParams.back().scheduled) {
-          NCCLCHECK(mscclRunSavedParams());
-          break;
-        }
+      NCCLCHECK(mscclScheduler(&status.savedSchedulerParams.back()));
+      if (status.savedSchedulerParams.back().scheduled) {
+        NCCLCHECK(mscclRunSavedParams());
+      } else {
+        NCCLCHECK(mscclFallBackSavedParams());
       }
-      NCCLCHECK(mscclFallBackSavedParams());
       break;
     case mscclGroupSupportedOp:
-      CUDACHECK(hipStreamGetCaptureInfo(stream, &captureStatus, &pid));
-      if (captureStatus == hipStreamCaptureStatusNone) {
-        NCCLCHECK(mscclScheduler(&status.savedSchedulerParams.back()));
-        if (status.savedSchedulerParams.back().scheduled) {
-          // Only save counts and displs when there is suitable MSCCL algorithm for this
-          NCCLCHECK(mscclSaveCountsAndDispls(&status.savedSchedulerParams.back()));
-          break;
-        }
+      NCCLCHECK(mscclScheduler(&status.savedSchedulerParams.back()));
+      if (status.savedSchedulerParams.back().scheduled) {
+        // Only save counts and displs when there is suitable MSCCL algorithm for this
+        NCCLCHECK(mscclSaveCountsAndDispls(&status.savedSchedulerParams.back()));
+      } else {
+        NCCLCHECK(mscclFallBackSavedParams());
       }
-      NCCLCHECK(mscclFallBackSavedParams());
       break;
     case mscclGroupUnsupportedOp:
       NCCLCHECK(mscclFallBackSavedParams());
@@ -318,10 +312,10 @@ ncclResult_t mscclTeardown() {
     status.freeAlgoHandles.push_back(p.first);
   }
   for (auto &p : status.devAlgos) {
-    CUDACHECK(hipFree(p.second));
+    NCCLCHECK(ncclCudaFree(p.second));
   }
-  CUDACHECK(hipFree(status.scratchBuffer));
-  CUDACHECK(hipFree(status.syncFlags));
+  NCCLCHECK(ncclCudaFree(status.scratchBuffer));
+  NCCLCHECK(ncclCudaFree(status.syncFlags));
   status.hostAlgos.clear();
   status.devAlgos.clear();
   status.freeAlgoHandles.clear();
