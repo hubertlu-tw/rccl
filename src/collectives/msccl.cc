@@ -54,7 +54,10 @@ ncclResult_t mscclRunAlgo(
 
   NCCLCHECK(mscclSetupSyncFlags(stream));
 
-  NCCLCHECK(mscclSetupConnections(hostAlgo, comm));
+  if (status.connectedAlgos.find(mscclAlgoHandle) == status.connectedAlgos.end()) {
+    NCCLCHECK(mscclSetupConnections(hostAlgo, comm));
+    status.connectedAlgos.insert(mscclAlgoHandle);
+  }
 
   NCCLCHECK(mscclSetupProxy(hostAlgo, comm));
 
@@ -74,6 +77,8 @@ ncclResult_t mscclUnloadAlgo(mscclAlgoHandle_t mscclAlgoHandle) {
   status.devAlgos.erase(mscclAlgoHandle);
 
   status.freeAlgoHandles.push_back(mscclAlgoHandle);
+
+  status.connectedAlgos.erase(mscclAlgoHandle);
 
   return ncclSuccess;
 }
