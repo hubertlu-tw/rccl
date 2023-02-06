@@ -10,8 +10,8 @@
 #include <cstdio>
 #include <cstdlib>
 
-NCCL_API(ncclResult_t, mscclLoadAlgo, const char *mscclAlgoFilePath, mscclAlgoHandle_t *mscclAlgoHandle);
-ncclResult_t mscclLoadAlgo(const char *mscclAlgoFilePath, mscclAlgoHandle_t *mscclAlgoHandle) {
+NCCL_API(ncclResult_t, mscclLoadAlgo, const char *mscclAlgoFilePath, mscclAlgoHandle_t *mscclAlgoHandle, ncclComm_t comm, hipStream_t stream);
+ncclResult_t mscclLoadAlgo(const char *mscclAlgoFilePath, mscclAlgoHandle_t *mscclAlgoHandle, ncclComm_t comm, hipStream_t stream) {
   mscclStatus& status = mscclGetStatus();
 
   if (status.freeAlgoHandles.size() == 0) {
@@ -23,7 +23,7 @@ ncclResult_t mscclLoadAlgo(const char *mscclAlgoFilePath, mscclAlgoHandle_t *msc
 
   struct mscclAlgo* hostAlgo;
   NCCLCHECK(ncclCalloc(&hostAlgo, 1));
-  NCCLCHECK(mscclGetAlgoFromXmlFile(mscclAlgoFilePath, hostAlgo, status.rank));
+  NCCLCHECK(mscclGetAlgoFromXmlFile(mscclAlgoFilePath, hostAlgo, comm->rank));
   status.hostAlgos[handle] = hostAlgo;
 
   struct mscclAlgo* devAlgo;
@@ -66,8 +66,8 @@ ncclResult_t mscclRunAlgo(
   return ncclSuccess;
 }
 
-NCCL_API(ncclResult_t, mscclUnloadAlgo, mscclAlgoHandle_t mscclAlgoHandle);
-ncclResult_t mscclUnloadAlgo(mscclAlgoHandle_t mscclAlgoHandle) {
+NCCL_API(ncclResult_t, mscclUnloadAlgo, mscclAlgoHandle_t mscclAlgoHandle, ncclComm_t comm, hipStream_t stream);
+ncclResult_t mscclUnloadAlgo(mscclAlgoHandle_t mscclAlgoHandle, ncclComm_t comm, hipStream_t stream) {
   mscclStatus& status = mscclGetStatus();
 
   free(status.hostAlgos[mscclAlgoHandle]);

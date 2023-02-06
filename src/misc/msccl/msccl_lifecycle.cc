@@ -4,6 +4,9 @@
  ************************************************************************/
 
 #include <atomic>
+#include <map>
+#include <mutex>
+#include <set>
 
 #include "alloc.h"
 #include "checks.h"
@@ -17,6 +20,7 @@ RCCL_PARAM(MscclEnabled, "MSCCL_ENABLE", 0);
 static const char* mscclAlgoFilePathEnv = "MSCCL_ALGO_FILE_PATH";
 static std::atomic<bool> mscclInitialized;
 static bool mscclSchedulerTriedLoadAlgo = false;
+static std::mutex mscclLifecycleMutex;
 
 bool mscclEnabled() {
   return rcclParamMscclEnabled();
@@ -40,19 +44,32 @@ bool mscclAvailable() {
   return mscclEnabled() && mscclInitialized.load(std::memory_order_acquire);
 }
 
+static bool mscclCommCompatible(ncclComm_t comm) {
+  std::map<uint64_t, std::set<uint64_t>> hostHashToPidHashes;
+  for (int i = 0; i < comm->nRanks; i++) {
+    uint64_t hostHash = comm->peerInfo[i].hostHash;
+    uint64_t pidHash = comm->peerInfo[i].pidHash;
+    if (hostHashToPidHashes.find(hostHash) != hostHashToPidHashes.end()) {
+      auto& pidHashSet = hostHashToPidHashes[hostHash];
+      if (pidHashSet.find(pidHash) != pidHashSet.end()) {
+        return false;
+      }
+    }
+    hostHashToPidHashes[hostHash].insert(pidHash);
+  }
+  return true;
+}
+
 ncclResult_t mscclInit(ncclComm_t comm) {
-  if (comm->intraRanks > 1) {
-    mscclInitialized.store(false, std::memory_order_release);
-    INFO(NCCL_INIT, "MSCCL doesn't support multiple GPUs in one process and is not available");
+  std::lock_guard<std::mutex> lock(mscclLifecycleMutex);
+
+  if (mscclInitialized.load(std::memory_order_acquire)) {
     return ncclSuccess;
-  } else {
-    mscclInitialized.store(true, std::memory_order_release);
   }
 
   mscclStatus& status = mscclGetStatus();
   status.scratchBuffer = nullptr;
   status.scratchBufferSize = 0;
-  status.rank = comm->rank;
   status.workIndex = 1;
   status.freeAlgoHandles.resize(MSCCL_MAX_NUM_ALGOS);
   for (int i = 0; i < MSCCL_MAX_NUM_ALGOS; i++) {
@@ -63,6 +80,13 @@ ncclResult_t mscclInit(ncclComm_t comm) {
   status.groupDepth = 0;
   status.lastStream = nullptr;
   mscclSchedulerTriedLoadAlgo = false;
+
+  if (!mscclCommCompatible(comm)) {
+    status.fallbackComms.insert(comm);
+  }
+
+  mscclInitialized.store(true, std::memory_order_release);
+
   return ncclSuccess;
 }
 
@@ -86,7 +110,7 @@ static ncclResult_t mscclScheduler(struct mscclSchedulerParam* param) {
     mscclSchedulerTriedLoadAlgo = true;
     const char* mscclAlgoFilePath = getenv(mscclAlgoFilePathEnv);
     if (mscclAlgoFilePath != nullptr) {
-      NCCLCHECK(mscclLoadAlgo(mscclAlgoFilePath, &loadedAlgoHandle));
+      NCCLCHECK(mscclLoadAlgo(mscclAlgoFilePath, &loadedAlgoHandle, param->comm, param->stream));
       mscclStatus& status = mscclGetStatus();
       loadedHostAlgo = status.hostAlgos[loadedAlgoHandle];
       algoAvailable = true;
@@ -266,28 +290,31 @@ ncclResult_t mscclEnqueueCheck(
 
   switch (status.groupStatus) {
     case mscclNoGroup:
-      CUDACHECK(hipStreamGetCaptureInfo(stream, &captureStatus, &pid));
-      if (captureStatus == hipStreamCaptureStatusNone) {
-        NCCLCHECK(mscclScheduler(&status.savedSchedulerParams.back()));
-        if (status.savedSchedulerParams.back().scheduled) {
-          NCCLCHECK(mscclRunSavedParams());
-          break;
+      if (status.fallbackComms.find(comm) == status.fallbackComms.end()) {
+        CUDACHECK(hipStreamGetCaptureInfo(stream, &captureStatus, &pid));
+        if (captureStatus == hipStreamCaptureStatusNone) {
+          NCCLCHECK(mscclScheduler(&status.savedSchedulerParams.back()));
+          if (status.savedSchedulerParams.back().scheduled) {
+            NCCLCHECK(mscclRunSavedParams());
+            break;
+          }
         }
       }
       NCCLCHECK(mscclFallBackSavedParams());
       break;
     case mscclGroupSupportedOp:
-      CUDACHECK(hipStreamGetCaptureInfo(stream, &captureStatus, &pid));
-      if (captureStatus == hipStreamCaptureStatusNone) {
-        NCCLCHECK(mscclScheduler(&status.savedSchedulerParams.back()));
-        if (status.savedSchedulerParams.back().scheduled) {
-          // Only save counts and displs when there is suitable MSCCL algorithm for this
-          NCCLCHECK(mscclSaveCountsAndDispls(&status.savedSchedulerParams.back()));
-          break;
+      if (status.fallbackComms.find(comm) == status.fallbackComms.end()) {
+        CUDACHECK(hipStreamGetCaptureInfo(stream, &captureStatus, &pid));
+        if (captureStatus == hipStreamCaptureStatusNone) {
+          NCCLCHECK(mscclScheduler(&status.savedSchedulerParams.back()));
+          if (status.savedSchedulerParams.back().scheduled) {
+            // Only save counts and displs when there is suitable MSCCL algorithm for this
+            NCCLCHECK(mscclSaveCountsAndDispls(&status.savedSchedulerParams.back()));
+            break;
+          }
         }
       }
-      NCCLCHECK(mscclFallBackSavedParams());
-      break;
+      status.groupStatus = mscclGroupUnsupportedOp;
     case mscclGroupUnsupportedOp:
       NCCLCHECK(mscclFallBackSavedParams());
       break;
@@ -310,6 +337,7 @@ ncclResult_t mscclGroupEnd() {
 }
 
 ncclResult_t mscclTeardown() {
+  std::lock_guard<std::mutex> lock(mscclLifecycleMutex);
   if (!mscclInitialized.load(std::memory_order_acquire)) {
     return ncclSuccess;
   }
@@ -328,7 +356,9 @@ ncclResult_t mscclTeardown() {
   status.freeAlgoHandles.clear();
   status.scratchBuffer = nullptr;
   status.scratchBufferSize = 0;
-  status.workIndex = 1;
+  status.savedSchedulerParams.clear();
+  status.connectedAlgos.clear();
+  status.fallbackComms.clear();
   mscclInitialized.store(false, std::memory_order_release);
   return ncclSuccess;
 }

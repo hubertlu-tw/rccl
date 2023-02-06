@@ -508,8 +508,8 @@ typedef int mscclAlgoHandle_t;
  * its handle via mscclAlgoHandle. This API is expected to be called by MSCCL
  * scheduler instead of end users.
  */
-ncclResult_t  mscclLoadAlgo(const char *mscclAlgoFilePath, mscclAlgoHandle_t *mscclAlgoHandle);
-ncclResult_t pmscclLoadAlgo(const char *mscclAlgoFilePath, mscclAlgoHandle_t *mscclAlgoHandle);
+ncclResult_t  mscclLoadAlgo(const char *mscclAlgoFilePath, mscclAlgoHandle_t *mscclAlgoHandle, ncclComm_t comm, hipStream_t stream);
+ncclResult_t pmscclLoadAlgo(const char *mscclAlgoFilePath, mscclAlgoHandle_t *mscclAlgoHandle, ncclComm_t comm, hipStream_t stream);
 
 /*! @brief MSCCL Run Algorithm
  *
@@ -534,8 +534,8 @@ ncclResult_t pmscclRunAlgo(
  * @details Unload MSCCL algorithm previous loaded using its handle. This API
  * is expected to be called by MSCCL scheduler instead of end users.
  */
-ncclResult_t  mscclUnloadAlgo(mscclAlgoHandle_t mscclAlgoHandle);
-ncclResult_t pmscclUnloadAlgo(mscclAlgoHandle_t mscclAlgoHandle);
+ncclResult_t  mscclUnloadAlgo(mscclAlgoHandle_t mscclAlgoHandle, ncclComm_t comm, hipStream_t stream);
+ncclResult_t pmscclUnloadAlgo(mscclAlgoHandle_t mscclAlgoHandle, ncclComm_t comm, hipStream_t stream);
 
 /*
  * Group semantics

@@ -177,7 +177,6 @@ struct mscclStatus {
   int sliceSteps;
   int chunkSize;
   int chunkEffectiveSize;
-  int rank;
   uint32_t workIndex;
   uint32_t maxAllowedCount;
   ncclDataType_t dataType;
@@ -186,6 +185,7 @@ struct mscclStatus {
   std::vector<struct mscclSchedulerParam> savedSchedulerParams;
   std::set<mscclAlgoHandle_t> connectedAlgos;
   hipStream_t lastStream;
+  std::set<ncclComm_t> fallbackComms;
 };
 
 struct alignas(16) mscclWork {

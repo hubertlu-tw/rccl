@@ -118,7 +118,7 @@ for (int r = 0; r < numloops; r++) { \
 }
 
 #define MSCCL_REDUCE_UNROLL_LOOP_B(numloops) \
-for (int r = 0; r < numReductions; r++) { \
+for (int r = 0; r < numloops; r++) { \
   srcOffset = srcBaseOffset + (ssize_t)mscclShmem.mscclTB.reductionSrcOffsets[t->reductionPointer+r] * sizePerMscclChunk; \
   srcs[r] = srcPointer + srcOffset; \
 }
