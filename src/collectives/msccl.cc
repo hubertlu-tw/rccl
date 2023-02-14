@@ -28,7 +28,7 @@ ncclResult_t mscclLoadAlgo(const char *mscclAlgoFilePath, mscclAlgoHandle_t *msc
 
   struct mscclAlgo* devAlgo;
   NCCLCHECK(ncclCudaCalloc(&devAlgo, 1));
-  CUDACHECK(hipMemcpy(devAlgo, hostAlgo, sizeof(struct mscclAlgo), hipMemcpyHostToDevice));
+  NCCLCHECK(ncclCudaMemcpy(devAlgo, hostAlgo, 1));
   status.devAlgos[handle] = devAlgo;
 
   return ncclSuccess;
@@ -73,7 +73,7 @@ ncclResult_t mscclUnloadAlgo(mscclAlgoHandle_t mscclAlgoHandle, ncclComm_t comm,
   free(status.hostAlgos[mscclAlgoHandle]);
   status.hostAlgos.erase(mscclAlgoHandle);
 
-  CUDACHECK(hipFree(status.devAlgos[mscclAlgoHandle]));
+  NCCLCHECK(ncclCudaFree(status.devAlgos[mscclAlgoHandle]));
   status.devAlgos.erase(mscclAlgoHandle);
 
   status.freeAlgoHandles.push_back(mscclAlgoHandle);

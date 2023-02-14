@@ -79,6 +79,14 @@ ncclResult_t mscclInit(ncclComm_t comm) {
   status.groupStatus = mscclNoGroup;
   status.groupDepth = 0;
   status.lastStream = nullptr;
+  status.workFifoDepth = MSCCL_WORK_FIFO_DEPTH;
+  NCCLCHECK(ncclCudaHostCalloc(&status.workFifo, status.workFifoDepth));
+  NCCLCHECK(ncclCudaHostCalloc(&status.workFifoDone, MAXCHANNELS));
+  status.workFifoSent = 0;
+  for (int i = 0; i < MAXCHANNELS; i++) {
+    status.workFifoSentPerChannel[i] = 0;
+  }
+  status.workFifoAckdMin = 0;
   mscclSchedulerTriedLoadAlgo = false;
 
   if (!mscclCommCompatible(comm)) {
@@ -347,10 +355,10 @@ ncclResult_t mscclTeardown() {
     status.freeAlgoHandles.push_back(p.first);
   }
   for (auto &p : status.devAlgos) {
-    CUDACHECK(hipFree(p.second));
+    NCCLCHECK(ncclCudaFree(p.second));
   }
-  CUDACHECK(hipFree(status.scratchBuffer));
-  CUDACHECK(hipFree(status.syncFlags));
+  NCCLCHECK(ncclCudaFree(status.scratchBuffer));
+  NCCLCHECK(ncclCudaFree(status.syncFlags));
   status.hostAlgos.clear();
   status.devAlgos.clear();
   status.freeAlgoHandles.clear();
@@ -359,6 +367,8 @@ ncclResult_t mscclTeardown() {
   status.savedSchedulerParams.clear();
   status.connectedAlgos.clear();
   status.fallbackComms.clear();
+  NCCLCHECK(ncclCudaHostFree(status.workFifo));
+  NCCLCHECK(ncclCudaHostFree(status.workFifoDone));
   mscclInitialized.store(false, std::memory_order_release);
   return ncclSuccess;
 }
